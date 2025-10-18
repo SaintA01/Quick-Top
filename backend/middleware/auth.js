@@ -20,17 +20,16 @@ export const protect = async (req, res, next) => {
     // 2) Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // 3) Check if user still exists
-    const currentUser = await User.findById(decoded.id);
-    if (!currentUser) {
+    if (!decoded || !decoded.id) {
       return res.status(401).json({
         status: 'error',
-        message: 'The user belonging to this token no longer exists.'
+        message: 'Invalid token. Please log in again.'
       });
     }
 
-    // 4) Grant access to protected route
-    req.user = currentUser;
+    // 3) Attach user to request (only id)
+    req.user = { id: decoded.id };
+
     next();
   } catch (error) {
     return res.status(401).json({
@@ -43,6 +42,6 @@ export const protect = async (req, res, next) => {
 // Generate JWT token
 export const signToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN
+    expiresIn: process.env.JWT_EXPIRES_IN || '90d'
   });
 };
