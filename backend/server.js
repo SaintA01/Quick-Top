@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import path from 'path';
 
 // Route imports
 import authRoutes from './routes/auth.js';
@@ -15,71 +16,59 @@ dotenv.config();
 
 const app = express();
 
-// Security middleware
+// Basic security middlewares
 app.use(helmet());
+app.use(express.json({ limit: '10kb' }));
 
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100 // limit each IP to 100 requests per windowMs
 });
-app.use('/api', limiter);
+app.use(limiter);
 
-// CORS middleware
-app.use(cors({
-  origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5500'],
-  credentials: true
-}));
-
-// Body parser middleware
-app.use(express.json({ limit: '10kb' }));
-app.use(express.urlencoded({ extended: true }));
+// CORS - allow the frontend origin or allow all if FRONTEND_URL not set
+const FRONTEND_URL = process.env.FRONTEND_URL || '*';
+const corsOptions = FRONTEND_URL === '*' ? { origin: true, credentials: true } : { origin: FRONTEND_URL, credentials: true };
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/services', servicesRoutes);
 
-// Home route
+// Health check
+app.get('/api/health', (req, res) => {
+  res.status(200).json({ status: 'success', message: 'OK' });
+});
+
+// Fallback home
 app.get('/', (req, res) => {
-  res.json({
-    status: 'success',
-    message: 'QuickTop API is running!',
-    timestamp: new Date().toISOString(),
-    version: '1.0.0'
-  });
+  res.send('QuickTop Backend is running.');
 });
 
-// 404 handler
-app.all('*', (req, res) => {
-  res.status(404).json({
-    status: 'error',
-    message: `Can't find ${req.originalUrl} on this server!`
-  });
-});
-
-// Global error handler
+// Global error handler (simple)
 app.use((err, req, res, next) => {
-  err.statusCode = err.statusCode || 500;
-  err.status = err.status || 'error';
-
-  res.status(err.statusCode).json({
-    status: err.status,
-    message: err.message,
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  console.error(err);
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({
+    status: 'error',
+    message: err.message || 'Internal Server Error'
   });
 });
 
+// Connect to MongoDB and start server
 const PORT = process.env.PORT || 5000;
 
-// Connect to database and start server
-mongoose.connect(process.env.MONGODB_URI)
+mongoose.connect(process.env.MONGODB_URI, {
+  // useNewUrlParser: true, useUnifiedTopology: true  // mongoose 7+ uses defaults
+})
   .then(() => {
     console.log('✅ MongoDB connected successfully');
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📱 QuickTop API: http://localhost:${PORT}`);
-      console.log(`🔐 Auth endpoints: http://localhost:${PORT}/api/auth`);
+      console.log(`📱 QuickTop API root: http://localhost:${PORT}/api`);
     });
   })
   .catch((error) => {
