@@ -1,5 +1,6 @@
 import User from '../models/User.js';
 import { signToken } from '../middleware/auth.js';
+import bcrypt from 'bcryptjs';
 
 // Utility function to send response
 const sendResponse = (res, statusCode, data) => {
@@ -12,133 +13,53 @@ const sendResponse = (res, statusCode, data) => {
 export const signup = async (req, res) => {
   try {
     const { name, email, phone, password, passwordConfirm } = req.body;
-
-    // 1) Check if passwords match
+    if (!email || !password) {
+      return sendResponse(res, 400, { message: 'Please provide email and password' });
+    }
     if (password !== passwordConfirm) {
-      return sendResponse(res, 400, {
-        message: 'Passwords do not match'
-      });
+      return sendResponse(res, 400, { message: 'Passwords do not match' });
     }
 
-    // 2) Check if user already exists
-    const existingUser = await User.findOne({
-      $or: [{ email }, { phone }]
-    });
+    const existing = await User.findOne({ email });
+    if (existing) return sendResponse(res, 400, { message: 'Email already registered' });
 
-    if (existingUser) {
-      return sendResponse(res, 400, {
-        message: 'User with this email or phone already exists'
-      });
-    }
+    const hashed = await bcrypt.hash(password, 12);
+    const user = await User.create({ name, email, phone, password: hashed });
 
-    // 3) Create new user
-    const newUser = await User.create({
-      name,
-      email,
-      phone,
-      password
-    });
-
-    // 4) Generate token
-    const token = signToken(newUser._id);
-
-    // 5) Update last login
-    await newUser.updateLastLogin();
-
-    // 6) Send response
-    sendResponse(res, 201, {
-      message: 'Account created successfully!',
-      token,
-      data: {
-        user: {
-          id: newUser._id,
-          name: newUser.name,
-          email: newUser.email,
-          phone: newUser.phone,
-          walletBalance: newUser.walletBalance,
-          accountNumber: newUser.accountNumber,
-          bankName: newUser.bankName
-        }
-      }
-    });
-
+    const token = signToken(user._id);
+    sendResponse(res, 201, { data: { token, user: { id: user._id, name: user.name, email: user.email } } });
   } catch (error) {
-    sendResponse(res, 400, {
-      message: error.message
-    });
+    sendResponse(res, 500, { message: error.message });
   }
 };
 
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) return sendResponse(res, 400, { message: 'Please provide email and password' });
 
-    // 1) Check if email and password exist
-    if (!email || !password) {
-      return sendResponse(res, 400, {
-        message: 'Please provide email and password'
-      });
-    }
+    const user = await User.findOne({ email });
+    if (!user) return sendResponse(res, 401, { message: 'Invalid credentials' });
 
-    // 2) Check if user exists && password is correct
-    const user = await User.findOne({ email }).select('+password');
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return sendResponse(res, 401, { message: 'Invalid credentials' });
 
-    if (!user || !(await user.correctPassword(password, user.password))) {
-      return sendResponse(res, 401, {
-        message: 'Incorrect email or password'
-      });
-    }
-
-    // 3) If everything ok, send token to client
     const token = signToken(user._id);
-
-    // 4) Update last login
-    await user.updateLastLogin();
-
-    sendResponse(res, 200, {
-      message: 'Login successful!',
-      token,
-      data: {
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          walletBalance: user.walletBalance,
-          accountNumber: user.accountNumber,
-          bankName: user.bankName
-        }
-      }
-    });
-
+    sendResponse(res, 200, { data: { token, user: { id: user._id, name: user.name, email: user.email } } });
   } catch (error) {
-    sendResponse(res, 400, {
-      message: error.message
-    });
+    sendResponse(res, 500, { message: error.message });
   }
 };
 
 export const getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-    
-    sendResponse(res, 200, {
-      data: {
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          walletBalance: user.walletBalance,
-          accountNumber: user.accountNumber,
-          bankName: user.bankName,
-          lastLogin: user.lastLogin
-        }
-      }
-    });
+    // protect middleware should attach req.user with id
+    const userId = req.user && req.user.id;
+    if (!userId) return sendResponse(res, 401, { message: 'Not authenticated' });
+    const user = await User.findById(userId).select('-password');
+    if (!user) return sendResponse(res, 404, { message: 'User not found' });
+    sendResponse(res, 200, { data: { user } });
   } catch (error) {
-    sendResponse(res, 400, {
-      message: error.message
-    });
+    sendResponse(res, 500, { message: error.message });
   }
 };
