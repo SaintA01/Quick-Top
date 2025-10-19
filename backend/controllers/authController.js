@@ -20,7 +20,7 @@ export const signup = async (req, res) => {
       return sendResponse(res, 400, { message: 'Passwords do not match' });
     }
 
-    const existing = await User.findOne({ email });
+    const existing = await User.findOne({ email }).select('+password');
     if (existing) return sendResponse(res, 400, { message: 'Email already registered' });
 
     const hashed = await bcrypt.hash(password, 12);
