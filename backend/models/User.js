@@ -34,42 +34,53 @@ const userSchema = new mongoose.Schema({
   lastLogin: { type: Date }
 }, { timestamps: true });
 
-// Generate account number
-userSchema.pre('save', function(next) {
+// ✅ Generate unique account number
+userSchema.pre('save', function (next) {
   if (!this.accountNumber) {
     this.accountNumber = 'QT' + Date.now().toString().slice(-8);
   }
   next();
 });
 
-// Hash password before saving
-userSchema.pre('save', function(next) {
+// ✅ Hash password before saving using crypto
+userSchema.pre('save', function (next) {
   if (!this.isModified('password')) return next();
+
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(this.password, salt, 1000, 64, `sha512`).toString(`hex`);
+  const hash = crypto
+    .pbkdf2Sync(this.password, salt, 1000, 64, 'sha512')
+    .toString('hex');
+
   this.password = `${salt}:${hash}`;
   next();
 });
 
-// Compare password
-userSchema.methods.correctPassword = function(candidatePassword, storedPassword) {
+// ✅ Compare entered password with stored hash
+userSchema.methods.correctPassword = function (candidatePassword, storedPassword) {
+  if (!storedPassword || !storedPassword.includes(':')) return false;
+
   const [salt, originalHash] = storedPassword.split(':');
-  const hash = crypto.pbkdf2Sync(candidatePassword, salt, 1000, 64, `sha512`).toString(`hex`);
+  const hash = crypto
+    .pbkdf2Sync(candidatePassword, salt, 1000, 64, 'sha512')
+    .toString('hex');
+
   return hash === originalHash;
 };
 
-// Wallet functions (same as before)
-userSchema.methods.hasSufficientBalance = function(amount) {
+// ✅ Wallet helper methods
+userSchema.methods.hasSufficientBalance = function (amount) {
   return this.walletBalance >= amount;
 };
-userSchema.methods.deductFromWallet = function(amount) {
+
+userSchema.methods.deductFromWallet = function (amount) {
   if (this.hasSufficientBalance(amount)) {
     this.walletBalance -= amount;
     return true;
   }
   return false;
 };
-userSchema.methods.addToWallet = function(amount) {
+
+userSchema.methods.addToWallet = function (amount) {
   this.walletBalance += amount;
   return this.walletBalance;
 };
