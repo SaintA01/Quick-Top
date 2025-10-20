@@ -36,11 +36,9 @@ export const signup = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password)
       return sendResponse(res, 400, { message: 'Please provide email and password' });
 
-    // explicitly select password field
     const user = await User.findOne({ email }).select('+password');
     if (!user)
       return sendResponse(res, 401, { message: 'Invalid email or password' });
@@ -49,26 +47,11 @@ export const login = async (req, res) => {
     if (!valid)
       return sendResponse(res, 401, { message: 'Invalid email or password' });
 
-    // update last login timestamp
-    await user.updateLastLogin();
-
     const token = signToken(user._id);
-
-    sendResponse(res, 200, {
-      data: {
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          walletBalance: user.walletBalance
-        }
-      },
-      message: 'Login successful'
-    });
+    user.password = undefined; // prevent sending hashed password
+    sendResponse(res, 200, { data: { token, user } });
   } catch (error) {
-    console.error('Login error:', error);
-    sendResponse(res, 500, { message: 'Server error during login' });
+    sendResponse(res, 500, { message: error.message });
   }
 };
 
