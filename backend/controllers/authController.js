@@ -36,18 +36,39 @@ export const signup = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) return sendResponse(res, 400, { message: 'Please provide email and password' });
 
-    const user = await User.findOne({ email });
-    if (!user) return sendResponse(res, 401, { message: 'Invalid credentials' });
+    if (!email || !password)
+      return sendResponse(res, 400, { message: 'Please provide email and password' });
+
+    // explicitly select password field
+    const user = await User.findOne({ email }).select('+password');
+    if (!user)
+      return sendResponse(res, 401, { message: 'Invalid email or password' });
 
     const valid = await bcrypt.compare(password, user.password);
-    if (!valid) return sendResponse(res, 401, { message: 'Invalid credentials' });
+    if (!valid)
+      return sendResponse(res, 401, { message: 'Invalid email or password' });
+
+    // update last login timestamp
+    await user.updateLastLogin();
 
     const token = signToken(user._id);
-    sendResponse(res, 200, { data: { token, user: { id: user._id, name: user.name, email: user.email } } });
+
+    sendResponse(res, 200, {
+      data: {
+        token,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          walletBalance: user.walletBalance
+        }
+      },
+      message: 'Login successful'
+    });
   } catch (error) {
-    sendResponse(res, 500, { message: error.message });
+    console.error('Login error:', error);
+    sendResponse(res, 500, { message: 'Server error during login' });
   }
 };
 
