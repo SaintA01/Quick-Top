@@ -1,22 +1,15 @@
 import mongoose from 'mongoose';
-import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 const userSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: [true, 'Please provide your name'],
-    trim: true,
-    maxlength: [50, 'Name cannot be more than 50 characters']
-  },
+  name: { type: String, required: [true, 'Please provide your name'], trim: true },
   email: {
     type: String,
     required: [true, 'Please provide your email'],
     unique: true,
     lowercase: true,
     validate: {
-      validator: function(email) {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-      },
+      validator: email => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
       message: 'Please provide a valid email'
     }
   },
@@ -24,9 +17,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Please provide your phone number'],
     validate: {
-      validator: function(phone) {
-        return /^(080|081|070|090|091)\d{8}$/.test(phone);
-      },
+      validator: phone => /^(080|081|070|090|091)\d{8}$/.test(phone),
       message: 'Please provide a valid Nigerian phone number'
     }
   },
@@ -36,30 +27,14 @@ const userSchema = new mongoose.Schema({
     minlength: [6, 'Password must be at least 6 characters'],
     select: false
   },
-  walletBalance: {
-    type: Number,
-    default: 0
-  },
-  accountNumber: {
-    type: String,
-    unique: true
-  },
-  bankName: {
-    type: String,
-    default: 'QuickTop Microfinance Bank'
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-  lastLogin: {
-    type: Date
-  }
-}, {
-  timestamps: true
-});
+  walletBalance: { type: Number, default: 0 },
+  accountNumber: { type: String, unique: true },
+  bankName: { type: String, default: 'QuickTop Microfinance Bank' },
+  isActive: { type: Boolean, default: true },
+  lastLogin: { type: Date }
+}, { timestamps: true });
 
-// Generate account number before saving
+// Generate account number
 userSchema.pre('save', function(next) {
   if (!this.accountNumber) {
     this.accountNumber = 'QT' + Date.now().toString().slice(-8);
@@ -68,30 +43,25 @@ userSchema.pre('save', function(next) {
 });
 
 // Hash password before saving
-userSchema.pre('save', async function(next) {
+userSchema.pre('save', function(next) {
   if (!this.isModified('password')) return next();
-  
-  this.password = await bcrypt.hash(this.password, 12);
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(this.password, salt, 1000, 64, `sha512`).toString(`hex`);
+  this.password = `${salt}:${hash}`;
   next();
 });
 
-// Update last login on login
-userSchema.methods.updateLastLogin = function() {
-  this.lastLogin = new Date();
-  return this.save({ validateBeforeSave: false });
+// Compare password
+userSchema.methods.correctPassword = function(candidatePassword, storedPassword) {
+  const [salt, originalHash] = storedPassword.split(':');
+  const hash = crypto.pbkdf2Sync(candidatePassword, salt, 1000, 64, `sha512`).toString(`hex`);
+  return hash === originalHash;
 };
 
-// Compare password method
-userSchema.methods.correctPassword = async function(candidatePassword, userPassword) {
-  return await bcrypt.compare(candidatePassword, userPassword);
-};
-
-// Check if user has sufficient balance
+// Wallet functions (same as before)
 userSchema.methods.hasSufficientBalance = function(amount) {
   return this.walletBalance >= amount;
 };
-
-// Deduct from wallet
 userSchema.methods.deductFromWallet = function(amount) {
   if (this.hasSufficientBalance(amount)) {
     this.walletBalance -= amount;
@@ -99,8 +69,6 @@ userSchema.methods.deductFromWallet = function(amount) {
   }
   return false;
 };
-
-// Add to wallet
 userSchema.methods.addToWallet = function(amount) {
   this.walletBalance += amount;
   return this.walletBalance;
