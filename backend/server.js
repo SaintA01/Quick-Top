@@ -37,7 +37,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || '*';
 const corsOptions =
   FRONTEND_URL === '*'
     ? { origin: true, credentials: true }
-    : { origin: [FRONTEND_URL, 'https://quicktop.infinityfreeapp.com'], credentials: true };
+    : { origin: [FRONTEND_URL, 'https://quicktop.42web.io'], credentials: true };
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
