@@ -4,44 +4,26 @@ import User from '../models/User.js';
 export const protect = async (req, res, next) => {
   try {
     let token;
-
-    // 1) Check if token exists in headers
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
+    } else if (req.cookies && req.cookies.token) {
+      token = req.cookies.token;
     }
 
-    if (!token) {
-      return res.status(401).json({
-        status: 'error',
-        message: 'You are not logged in! Please log in to get access.'
-      });
-    }
+    if (!token) return res.status(401).json({ status: 'error', message: 'You are not logged in' });
 
-    // 2) Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'change_this_secret');
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(401).json({ status: 'error', message: 'User no longer exists' });
 
-    if (!decoded || !decoded.id) {
-      return res.status(401).json({
-        status: 'error',
-        message: 'Invalid token. Please log in again.'
-      });
-    }
-
-    // 3) Attach user to request (only id)
-    req.user = { id: decoded.id };
-
+    req.user = { id: user._id, email: user.email };
     next();
   } catch (error) {
-    return res.status(401).json({
-      status: 'error',
-      message: 'Invalid token. Please log in again.'
-    });
+    console.error('Auth protect error:', error?.message || error);
+    return res.status(401).json({ status: 'error', message: 'Invalid token' });
   }
 };
 
-// Generate JWT token
 export const signToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '90d'
-  });
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'change_this_secret', { expiresIn: process.env.JWT_EXPIRES_IN || '90d' });
 };
