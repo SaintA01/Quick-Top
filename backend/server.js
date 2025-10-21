@@ -11,85 +11,54 @@ import authRoutes from './routes/auth.js';
 import walletRoutes from './routes/wallet.js';
 import servicesRoutes from './routes/services.js';
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-// ✅ Trust proxy (Fixes express-rate-limit "X-Forwarded-For" issue on Vercel)
-app.set('trust proxy', 1);
-
-// ✅ Basic security middlewares
+// Middlewares
 app.use(helmet());
 app.use(express.json({ limit: '10kb' }));
 
-// ✅ Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP
-  standardHeaders: true, // Return rate limit info in headers
-  legacyHeaders: false,  // Disable old headers
-});
+const FRONTEND_URL = process.env.FRONTEND_URL || '*';
+const corsOptions = FRONTEND_URL === '*' ? { origin: true, credentials: true } : { origin: FRONTEND_URL, credentials: true };
+app.use(cors(corsOptions));
+
+// Rate limiting
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
 app.use(limiter);
 
-// ✅ CORS setup — allow your frontend domain or all if not set
-const FRONTEND_URL = process.env.FRONTEND_URL || '*';
-const corsOptions =
-  FRONTEND_URL === '*'
-    ? { origin: true, credentials: true }
-    : { origin: [FRONTEND_URL, 'https://quicktop.42web.io'], credentials: true };
-
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
-
-// ✅ API routes
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/services', servicesRoutes);
 
-// ✅ Health check route
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'success', message: 'OK' });
-});
+// Basic health route
+app.get('/api/health', (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV || 'development' }));
 
-// ✅ Fallback route for root
-app.get('/', (req, res) => {
-  res.send('🚀 QuickTop Backend is running successfully on Vercel!');
-});
+// Connect to MongoDB and start
+const MONGODB_URI = process.env.MONGODB_URI || process.env.DATABASE_URL || null;
 
-// ✅ Global error handler
-app.use((err, req, res, next) => {
-  console.error('💥 Error caught:', err);
-  const statusCode = err.statusCode || 500;
-  res.status(statusCode).json({
-    status: 'error',
-    message: err.message || 'Internal Server Error',
+async function start() {
+  if (!MONGODB_URI) {
+    console.warn('⚠️  MONGODB_URI not set. The app will still start but DB operations will fail. Set MONGODB_URI in Vercel env.');
+  } else {
+    try {
+      await mongoose.connect(MONGODB_URI, { 
+        useNewUrlParser: true, 
+        useUnifiedTopology: true 
+      });
+      console.log('✅ MongoDB connected');
+    } catch (err) {
+      console.error('❌ MongoDB connection error:', err.message);
+    }
+  }
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
   });
-});
-
-// ✅ MongoDB connection
-const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGODB_URI;
-
-if (!MONGO_URI) {
-  console.error('❌ MONGODB_URI is not defined in .env file');
-  process.exit(1);
 }
 
-mongoose
-  .connect(MONGO_URI, {
-    serverSelectionTimeoutMS: 20000, // wait up to 20s before timeout
-  })
-  .then(() => {
-    console.log('✅ MongoDB connected successfully');
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📱 QuickTop API root: http://localhost:${PORT}/api`);
-    });
-  })
-  .catch((error) => {
-    console.error('❌ MongoDB connection error:', error.message);
-    process.exit(1);
-  });
+start();
 
 export default app;
